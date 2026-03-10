@@ -176,7 +176,9 @@ private:
     };
 
     int    K_, T_;
-    double delta_, log_T_;
+    double delta_;
+    std::mt19937 rng_;
+    double log_T_;
 
     int t_     = 0;
     int ell_   = 0;
@@ -197,7 +199,6 @@ private:
     int                                       num_lengths_ = 0;
     std::vector<std::vector<WinStat>>         win_stats_;  // [arm][length_index]
 
-    std::mt19937 rng_;
     int num_resets_ = 0;
 
     // -----------------------------------------------------------------------

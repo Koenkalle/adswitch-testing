@@ -85,13 +85,13 @@ static void compare(const std::string& env_name,
 
     {
         auto env  = make_env();
-        ADSwitchBasic algo(K, /*alpha=*/4.0, /*delta=*/0.05);
+        ADSwitchBasic algo(K, T, /*delta=*/0.05);
         auto res = run_experiment(algo, *env, T);
         print_row("Basic", res.cumulative_regret, res.num_resets, res.elapsed_ms);
     }
     {
         auto env  = make_env();
-        ADSwitchFast  algo(K, /*alpha=*/4.0, /*delta=*/0.05);
+        ADSwitchFast  algo(K, T, /*delta=*/0.05);
         auto res = run_experiment(algo, *env, T);
         print_row("Fast (R3)", res.cumulative_regret, res.num_resets, res.elapsed_ms);
     }

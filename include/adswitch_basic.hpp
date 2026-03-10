@@ -200,6 +200,7 @@ private:
     // -----------------------------------------------------------------------
     int    K_, T_;
     double delta_;
+    std::mt19937 rng_;
     double log_T_;          // ln(T), precomputed
 
     int t_     = 0;         // Line 2: global round counter
@@ -215,7 +216,6 @@ private:
     std::vector<double>                  delta_tilde_;  // Line 24: Δ̃_ℓ(a)
     std::vector<std::vector<CheckTriple>> S_;           // Line 6/24: S_t(a)
 
-    std::mt19937 rng_;
     int num_resets_ = 0;
 
     // -----------------------------------------------------------------------
