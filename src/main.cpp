@@ -9,7 +9,6 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
-#include <numeric>
 #include <string>
 #include <vector>
 
@@ -26,14 +25,11 @@ struct RunResult {
     double cumulative_regret;
     int    num_resets;
     double elapsed_ms;
-    std::vector<double> regret_trace;  // regret at each step
 };
 
 template <typename Algorithm>
 RunResult<Algorithm> run_experiment(Algorithm& algo, BanditEnvironment& env, int T) {
     double cum_regret = 0.0;
-    std::vector<double> trace;
-    trace.reserve(T);
 
     auto t_start = std::chrono::steady_clock::now();
 
@@ -47,9 +43,7 @@ RunResult<Algorithm> run_experiment(Algorithm& algo, BanditEnvironment& env, int
         // 3. Compute instantaneous regret using the *current* best arm's mean.
         std::vector<double> cur_means = env.means();
         double best_mean = *std::max_element(cur_means.begin(), cur_means.end());
-        double instant_regret = best_mean - cur_means[arm];
-        cum_regret += instant_regret;
-        trace.push_back(cum_regret);
+        cum_regret += best_mean - cur_means[arm];
 
         // 4. Update algorithm with observed reward.
         algo.update(arm, reward);
@@ -62,7 +56,7 @@ RunResult<Algorithm> run_experiment(Algorithm& algo, BanditEnvironment& env, int
     double elapsed_ms =
         std::chrono::duration<double, std::milli>(t_end - t_start).count();
 
-    return {cum_regret, algo.num_resets(), elapsed_ms, std::move(trace)};
+    return {cum_regret, algo.num_resets(), elapsed_ms};
 }
 
 // ---------------------------------------------------------------------------

@@ -65,6 +65,11 @@ static void test_section(const std::string& name) {
     std::cout << "\n--- " << name << " ---\n";
 }
 
+// Maximum number of spurious epoch resets allowed in a stationary environment.
+// With delta=1e-6 and 500 rounds, occasional false alarms are extremely rare;
+// this bound accommodates probabilistic effects while still being meaningful.
+static constexpr int kMaxSpuriousResets = 3;
+
 // ===========================================================================
 // Environment tests
 // ===========================================================================
@@ -224,8 +229,7 @@ static void test_basic_no_change_stationary() {
         env.advance();
     }
     // With very tight delta and stationary rewards, resets should be rare.
-    // Allowing up to 3 to account for probabilistic effects.
-    ASSERT_TRUE(resets <= 3);
+    ASSERT_TRUE(resets <= kMaxSpuriousResets);
 }
 
 static void test_basic_detects_large_change() {
@@ -340,7 +344,7 @@ static void test_fast_no_change_stationary() {
         if (algo.update(arm, r)) ++resets;
         env.advance();
     }
-    ASSERT_TRUE(resets <= 3);
+    ASSERT_TRUE(resets <= kMaxSpuriousResets);
 }
 
 static void test_fast_detects_large_change() {

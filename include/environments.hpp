@@ -213,12 +213,16 @@ public:
 //    Randomly generated phases where the best arm changes at each switch by a
 //    large margin (default gap = 0.4).
 // ---------------------------------------------------------------------------
-class BigSwitchEnv : public BanditEnvironment {
+// 4. & 5. Randomly generated switch environments (shared base class)
+//    BigSwitchEnv  : large gap between the best arm and others (default Δ = 0.4)
+//    SmallSwitchEnv: small gap, switches harder to detect   (default Δ = 0.1)
+// ---------------------------------------------------------------------------
+class RandomSwitchEnv : public BanditEnvironment {
 public:
-    BigSwitchEnv(int K, int T, int num_switches, double gap = 0.4,
-                 unsigned seed = 42)
-        : K_(K), t_(0), phase_idx_(0), rng_(seed) {
-        build_phases(T, num_switches, gap);
+    RandomSwitchEnv(int K, int T, int num_switches, double gap,
+                    unsigned seed)
+        : K_(K), gap_(gap), t_(0), phase_idx_(0), rng_(seed) {
+        build_phases(T, num_switches);
         means_ = phases_[0].second;
     }
 
@@ -245,7 +249,7 @@ public:
     int time() const override { return t_; }
 
     std::string description() const override {
-        return "Big-switch (" + std::to_string(phases_.size() - 1) +
+        return "RandomSwitch (" + std::to_string(phases_.size() - 1) +
                " switches, gap=" + std::to_string(gap_) + ")";
     }
 
@@ -253,9 +257,19 @@ public:
         return phases_;
     }
 
+protected:
+    int    K_;
+    double gap_;
+
 private:
-    void build_phases(int T, int num_switches, double gap) {
-        gap_ = gap;
+    // Build means for a given best arm: best arm gets 0.5 + gap/2, rest get 0.5 - gap/2.
+    std::vector<double> make_means(int best) const {
+        std::vector<double> m(K_, 0.5 - gap_ / 2.0);
+        m[best] = 0.5 + gap_ / 2.0;
+        return m;
+    }
+
+    void build_phases(int T, int num_switches) {
         std::uniform_int_distribution<int> arm_dist(0, K_ - 1);
 
         // Evenly space switch points across [1, T).
@@ -267,17 +281,10 @@ private:
             }
         }
 
-        // Build means: best arm gets mean 0.5 + gap/2, others get 0.5 - gap/2.
-        auto make_means = [&](int best) {
-            std::vector<double> m(K_, 0.5 - gap / 2.0);
-            m[best] = 0.5 + gap / 2.0;
-            return m;
-        };
-
         int best = arm_dist(rng_);
         phases_.push_back({0, make_means(best)});
         for (int sp : switch_points) {
-            // Ensure the best arm actually changes.
+            // Ensure the best arm actually changes at each switch.
             int new_best;
             do {
                 new_best = arm_dist(rng_);
@@ -288,8 +295,6 @@ private:
         means_ = phases_[0].second;
     }
 
-    int K_;
-    double gap_ = 0.4;
     std::vector<std::pair<int, std::vector<double>>> phases_;
     std::vector<double> means_;
     int t_;
@@ -298,87 +303,35 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 4. Big-switch environment
+//    Randomly generated phases where the best arm changes at each switch by a
+//    large margin (default gap = 0.4).
+// ---------------------------------------------------------------------------
+class BigSwitchEnv : public RandomSwitchEnv {
+public:
+    BigSwitchEnv(int K, int T, int num_switches, double gap = 0.4,
+                 unsigned seed = 42)
+        : RandomSwitchEnv(K, T, num_switches, gap, seed) {}
+
+    std::string description() const override {
+        return "Big-switch (" + std::to_string(phases().size() - 1) +
+               " switches, gap=" + std::to_string(gap_) + ")";
+    }
+};
+
+// ---------------------------------------------------------------------------
 // 5. Small-switch environment
 //    Same as BigSwitchEnv but with a small gap (default 0.1) so switches are
 //    harder to detect.
 // ---------------------------------------------------------------------------
-class SmallSwitchEnv : public BanditEnvironment {
+class SmallSwitchEnv : public RandomSwitchEnv {
 public:
     SmallSwitchEnv(int K, int T, int num_switches, double gap = 0.1,
                    unsigned seed = 42)
-        : K_(K), t_(0), phase_idx_(0), rng_(seed) {
-        build_phases(T, num_switches, gap);
-        means_ = phases_[0].second;
-    }
-
-    double get_reward(int arm) override {
-        double p = std::max(0.0, std::min(1.0, means_.at(arm)));
-        return std::bernoulli_distribution(p)(rng_) ? 1.0 : 0.0;
-    }
-
-    void advance() override {
-        ++t_;
-        while (phase_idx_ + 1 < static_cast<int>(phases_.size()) &&
-               t_ >= phases_[phase_idx_ + 1].first) {
-            ++phase_idx_;
-            means_ = phases_[phase_idx_].second;
-        }
-    }
-
-    int best_arm() const override { return argmax_means(means_); }
-
-    int num_arms() const override { return K_; }
-
-    std::vector<double> means() const override { return means_; }
-
-    int time() const override { return t_; }
+        : RandomSwitchEnv(K, T, num_switches, gap, seed) {}
 
     std::string description() const override {
-        return "Small-switch (" + std::to_string(phases_.size() - 1) +
+        return "Small-switch (" + std::to_string(phases().size() - 1) +
                " switches, gap=" + std::to_string(gap_) + ")";
     }
-
-    const std::vector<std::pair<int, std::vector<double>>>& phases() const {
-        return phases_;
-    }
-
-private:
-    void build_phases(int T, int num_switches, double gap) {
-        gap_ = gap;
-        std::uniform_int_distribution<int> arm_dist(0, K_ - 1);
-
-        std::vector<int> switch_points;
-        if (num_switches > 0) {
-            int interval = T / (num_switches + 1);
-            for (int i = 1; i <= num_switches; ++i) {
-                switch_points.push_back(i * interval);
-            }
-        }
-
-        auto make_means = [&](int best) {
-            std::vector<double> m(K_, 0.5 - gap / 2.0);
-            m[best] = 0.5 + gap / 2.0;
-            return m;
-        };
-
-        int best = arm_dist(rng_);
-        phases_.push_back({0, make_means(best)});
-        for (int sp : switch_points) {
-            int new_best;
-            do {
-                new_best = arm_dist(rng_);
-            } while (new_best == best && K_ > 1);
-            best = new_best;
-            phases_.push_back({sp, make_means(best)});
-        }
-        means_ = phases_[0].second;
-    }
-
-    int K_;
-    double gap_ = 0.1;
-    std::vector<std::pair<int, std::vector<double>>> phases_;
-    std::vector<double> means_;
-    int t_;
-    int phase_idx_;
-    std::mt19937 rng_;
 };
