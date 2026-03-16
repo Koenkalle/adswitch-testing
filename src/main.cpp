@@ -1,10 +1,15 @@
 // ADSWITCH experiment runner
 // Exercises ADSwitchBasic and ADSwitchFast on five environment types and
 // reports cumulative regret, number of epoch resets, and runtime.
+//
+// Usage: adswitch_runner [T] [K]
+//   T  – time horizon   (default: 10000)
+//   K  – number of arms (default: 5)
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -98,11 +103,53 @@ static void compare(const std::string& env_name,
 }
 
 // ---------------------------------------------------------------------------
+// Generate K stationary means spread in [0.3, 0.8].
+// ---------------------------------------------------------------------------
+static std::vector<double> make_stationary_means(int K) {
+    std::vector<double> m(K);
+    if (K == 1) {
+        m[0] = 0.55;
+    } else {
+        for (int i = 0; i < K; ++i)
+            m[i] = 0.3 + 0.5 * static_cast<double>(i) / (K - 1);
+    }
+    return m;
+}
+
+// ---------------------------------------------------------------------------
+// Generate sharp-switch phases for K arms with num_phases phases over T.
+// Each phase picks a different best arm (cycling through 0..K-1).
+// ---------------------------------------------------------------------------
+static std::vector<std::pair<int, std::vector<double>>>
+make_sharp_phases(int K, int T, int num_phases) {
+    using Phase = std::pair<int, std::vector<double>>;
+    std::vector<Phase> phases;
+    for (int p = 0; p < num_phases; ++p) {
+        int start = (p == 0) ? 0 : p * T / num_phases;
+        int best  = p % K;
+        std::vector<double> means(K, 0.3);
+        means[best] = 0.9;
+        phases.push_back({start, means});
+    }
+    return phases;
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-int main() {
-    constexpr int T = 10000;
-    constexpr int K = 5;
+int main(int argc, char* argv[]) {
+    int T = 10000;
+    int K = 5;
+
+    if (argc >= 2) T = std::atoi(argv[1]);
+    if (argc >= 3) K = std::atoi(argv[2]);
+
+    if (T <= 0 || K <= 0) {
+        std::cerr << "Usage: " << argv[0] << " [T] [K]\n"
+                  << "  T = time horizon (positive integer, default 10000)\n"
+                  << "  K = number of arms (positive integer, default 5)\n";
+        return 1;
+    }
 
     std::cout << "ADSWITCH Experiment Runner\n";
     std::cout << "Arms K=" << K << "  Horizon T=" << T << "\n";
@@ -111,9 +158,9 @@ int main() {
     // 1. Stochastic (stationary) environment
     // ------------------------------------------------------------------
     compare("Stochastic",
-            []() -> std::unique_ptr<BanditEnvironment> {
+            [K]() -> std::unique_ptr<BanditEnvironment> {
                 return std::make_unique<StochasticEnv>(
-                    std::vector<double>{0.5, 0.6, 0.7, 0.4, 0.55}, /*seed=*/1);
+                    make_stationary_means(K), /*seed=*/1);
             },
             T, K);
 
@@ -121,26 +168,20 @@ int main() {
     // 2. Drifting stochastic environment
     // ------------------------------------------------------------------
     compare("Drifting",
-            []() -> std::unique_ptr<BanditEnvironment> {
+            [K]() -> std::unique_ptr<BanditEnvironment> {
                 return std::make_unique<DriftingEnv>(
-                    std::vector<double>{0.5, 0.6, 0.7, 0.4, 0.55},
+                    make_stationary_means(K),
                     /*drift_rate=*/0.002, /*seed=*/2);
             },
             T, K);
 
     // ------------------------------------------------------------------
-    // 3. Sharp-switch environment (manually specified phases)
+    // 3. Sharp-switch environment (generated phases)
     // ------------------------------------------------------------------
     compare("Sharp-switch",
-            []() -> std::unique_ptr<BanditEnvironment> {
-                using Phase = std::pair<int, std::vector<double>>;
+            [K, T]() -> std::unique_ptr<BanditEnvironment> {
                 return std::make_unique<SharpSwitchEnv>(
-                    std::vector<Phase>{
-                        {0,    {0.3, 0.9, 0.3, 0.3, 0.3}},
-                        {2500, {0.3, 0.3, 0.9, 0.3, 0.3}},
-                        {5000, {0.9, 0.3, 0.3, 0.3, 0.3}},
-                        {7500, {0.3, 0.3, 0.3, 0.3, 0.9}}},
-                    /*seed=*/3);
+                    make_sharp_phases(K, T, /*num_phases=*/4), /*seed=*/3);
             },
             T, K);
 
