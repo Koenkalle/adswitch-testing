@@ -22,6 +22,7 @@
 #include "adswitch_basic.hpp"
 #include "adswitch_fast.hpp"
 #include "environments.hpp"
+#include "qbl_single.hpp"
 
 // ---------------------------------------------------------------------------
 // Minimal test framework
@@ -149,9 +150,69 @@ static void test_small_switch_env() {
     ASSERT_TRUE(static_cast<int>(env.phases().size()) == 3);
 }
 
+static void test_mod2_env() {
+    test_section("Mod2Env");
+
+    Mod2Env env(4, 100, /*seed=*/13);
+    ASSERT_TRUE(env.num_arms() == 4);
+
+    auto m0 = env.means();
+    ASSERT_TRUE(m0[0] == 1.0);
+    ASSERT_TRUE(m0[1] == 0.0);
+    ASSERT_TRUE(m0[2] == 1.0);
+    ASSERT_TRUE(m0[3] == 0.0);
+
+    for (int t = 0; t < 3; ++t) env.advance();
+    auto m1 = env.means();
+    ASSERT_TRUE(m1[0] == 0.0);
+    ASSERT_TRUE(m1[1] == 1.0);
+    ASSERT_TRUE(m1[2] == 0.0);
+    ASSERT_TRUE(m1[3] == 1.0);
+
+    for (int t = 0; t < 9; ++t) env.advance();
+    auto m2 = env.means();
+    ASSERT_TRUE(m2[0] == 1.0);
+    ASSERT_TRUE(m2[1] == 0.0);
+
+    ASSERT_THROWS(Mod2Env(0, 100), std::invalid_argument);
+    ASSERT_THROWS(Mod2Env(3, 0), std::invalid_argument);
+}
+
 // ===========================================================================
 // ADSwitchBasic tests
 // ===========================================================================
+
+static void test_qbl_construction() {
+    test_section("QBLSingle construction");
+
+    QBLSingle algo(5, 0.1, /*seed=*/9);
+    ASSERT_TRUE(algo.num_arms() == 5);
+    ASSERT_TRUE(algo.num_resets() == 0);
+
+    ASSERT_THROWS(QBLSingle(0, 0.1), std::invalid_argument);
+    ASSERT_THROWS(QBLSingle(3, -0.1), std::invalid_argument);
+    ASSERT_THROWS(QBLSingle(3, 1.1), std::invalid_argument);
+}
+
+static void test_qbl_selects_valid_arm() {
+    test_section("QBLSingle selects valid arm");
+
+    constexpr int K = 4;
+    QBLSingle algo(K, 0.1, /*seed=*/11);
+    const int arm = algo.select_arm(1);
+    ASSERT_TRUE(arm >= 0 && arm < K);
+}
+
+static void test_qbl_demotes_poor_leader() {
+    test_section("QBLSingle demotes poor leader");
+
+    QBLSingle algo(2, /*gamma=*/0.0, /*seed=*/13);
+    const int arm = algo.select_arm(1);
+    const bool demoted = algo.update(arm, /*reward=*/0.0);
+
+    ASSERT_TRUE(demoted);
+    ASSERT_TRUE(algo.num_resets() == 1);
+}
 
 static void test_basic_construction() {
     test_section("ADSwitchBasic construction");
@@ -495,6 +556,12 @@ int main() {
     test_sharp_switch_env();
     test_big_switch_env();
     test_small_switch_env();
+    test_mod2_env();
+
+    // QBL tests
+    test_qbl_construction();
+    test_qbl_selects_valid_arm();
+    test_qbl_demotes_poor_leader();
 
     // ADSwitchBasic tests
     test_basic_construction();

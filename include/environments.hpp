@@ -1,8 +1,8 @@
 #pragma once
 
 // Test environments for the ADSWITCH bandit algorithm.
-// Implements stochastic, drifting, sharp-switch, big-switch, and small-switch
-// environments as described in the ADSWITCH paper (Auer & Chiang, COLT 2019).
+// Implements stochastic, drifting, sharp-switch, big-switch, small-switch,
+// and Mod2 environments.
 
 #include <algorithm>
 #include <cmath>
@@ -37,6 +37,9 @@ public:
 
     // Current time step (number of advance() calls).
     virtual int time() const = 0;
+
+    // Rounds at which an abrupt environment shift occurs.
+    virtual std::vector<int> shift_rounds() const { return {}; }
 
     // Human-readable description of this environment.
     virtual std::string description() const = 0;
@@ -183,6 +186,15 @@ public:
 
     int num_phases() const { return static_cast<int>(phases_.size()); }
 
+    std::vector<int> shift_rounds() const override {
+        std::vector<int> shifts;
+        shifts.reserve(phases_.size() > 0 ? phases_.size() - 1 : 0);
+        for (std::size_t i = 1; i < phases_.size(); ++i) {
+            shifts.push_back(phases_[i].first);
+        }
+        return shifts;
+    }
+
     std::string description() const override { return "Piecewise stationary"; }
 
 protected:
@@ -255,6 +267,15 @@ public:
 
     const std::vector<std::pair<int, std::vector<double>>>& phases() const {
         return phases_;
+    }
+
+    std::vector<int> shift_rounds() const override {
+        std::vector<int> shifts;
+        shifts.reserve(phases_.size() > 0 ? phases_.size() - 1 : 0);
+        for (std::size_t i = 1; i < phases_.size(); ++i) {
+            shifts.push_back(phases_[i].first);
+        }
+        return shifts;
     }
 
 protected:
@@ -334,4 +355,66 @@ public:
         return "Small-switch (" + std::to_string(phases().size() - 1) +
                " switches, gap=" + std::to_string(gap_) + ")";
     }
+};
+
+// ---------------------------------------------------------------------------
+// 6. Mod2 environment
+//    Binary rewards with progressively longer stationary streaks. The initial
+//    phase rewards even-indexed arms with mean 1 and odd-indexed arms with
+//    mean 0; each shift swaps the parity. Shift intervals grow geometrically
+//    as 3, 3^2, 3^3, ... rounds, creating increasingly stable phases.
+// ---------------------------------------------------------------------------
+class Mod2Env : public PiecewiseStationaryEnv {
+public:
+    Mod2Env(int K, int T, unsigned seed = 42)
+        : PiecewiseStationaryEnv(build_phases(K, T), seed), K_(K), T_(T) {
+        if (K_ <= 0) {
+            throw std::invalid_argument("Mod2Env: K must be > 0");
+        }
+        if (T_ <= 0) {
+            throw std::invalid_argument("Mod2Env: T must be > 0");
+        }
+    }
+
+    std::string description() const override {
+        return "Mod2 (parity swaps after 3, 3^2, 3^3, ... rounds)";
+    }
+
+private:
+    static std::vector<double> parity_means(int K, bool even_is_best) {
+        std::vector<double> means(K, 0.0);
+        for (int arm = 0; arm < K; ++arm) {
+            const bool is_even = (arm % 2) == 0;
+            means[arm] = (is_even == even_is_best) ? 1.0 : 0.0;
+        }
+        return means;
+    }
+
+    static std::vector<std::pair<int, std::vector<double>>> build_phases(int K, int T) {
+        if (K <= 0) {
+            throw std::invalid_argument("Mod2Env: K must be > 0");
+        }
+        if (T <= 0) {
+            throw std::invalid_argument("Mod2Env: T must be > 0");
+        }
+
+        std::vector<std::pair<int, std::vector<double>>> phases;
+        phases.push_back({0, parity_means(K, /*even_is_best=*/true)});
+
+        long long elapsed = 0;
+        long long interval = 3;
+        bool even_is_best = true;
+        while (true) {
+            elapsed += interval;
+            if (elapsed >= T) break;
+            even_is_best = !even_is_best;
+            phases.push_back({static_cast<int>(elapsed),
+                              parity_means(K, even_is_best)});
+            interval *= 3;
+        }
+        return phases;
+    }
+
+    int K_;
+    int T_;
 };
