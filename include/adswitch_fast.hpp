@@ -286,11 +286,11 @@ private:
 
     // -----------------------------------------------------------------------
     // Algorithm 1, Lines 9–11: scheduling (identical to basic variant).
-    // Probability = √ℓ / (K · T · log T)  [no ε factor].
+    // Probability = ε_i √ℓ / (K · T · log T), where ε_i = 2^{-i}.
     // -----------------------------------------------------------------------
     void schedule_bad_arm_checks() {
         if (T_ < 2) return;
-        const double prob =
+        const double base_prob =
             std::sqrt(static_cast<double>(ell_)) /
             (static_cast<double>(K_) * static_cast<double>(T_) * log_T_);
 
@@ -301,8 +301,9 @@ private:
                     std::pow(2.0, -static_cast<double>(i));
                 if (delta_tilde_[a] > 0.0 &&
                     eps_i < delta_tilde_[a] / 16.0) break;
+                const double prob_i = std::min(1.0, eps_i * base_prob);
                 if (std::bernoulli_distribution(
-                        std::min(1.0, prob))(rng_)) {
+                        prob_i)(rng_)) {
                     const double raw =
                         std::pow(2.0, 2 * i + 1) * log_T_;
                     const int n_needed =

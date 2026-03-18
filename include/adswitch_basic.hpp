@@ -21,10 +21,11 @@
 //    8:   t ← t + 1.
 //    9:   Add checks for bad arms:
 //   10:   For all a ∈ BAD_t, and all i ≥ 1 with 2^{-i} ≥ Δ̃_ℓ(a)/16,
-//   11:     with probability √ℓ/(KT log T) add
+//   11:     with probability 2^{-i}√ℓ/(KT log T) add
 //           S_t(a) ← S_t(a) ∪ (2^{-i}, ⌈2(log T)/ε²⌉, t).
-//         (Note: the text states the probability is √ℓ/(KT log T) with no
-//          ε factor; n_needed = ⌈2 log T / ε²⌉ = ⌈2^{2i+1} log T⌉.)
+//         (The PDF text extraction is garbled here, but the paper body matches
+//          the pseudocode: the probability includes the ε = 2^{-i} factor;
+//          n_needed = ⌈2 log T / ε²⌉ = ⌈2^{2i+1} log T⌉.)
 //   12: Select an arm:
 //   13:   Select a_t = argmin_a { τ : a ∉ {a_τ,…,a_{t-1}},
 //                                     a ∈ GOOD_t ∨ S_t(a) ≠ {} }.
@@ -240,29 +241,31 @@ private:
     //
     // For each a ∈ BAD_t and each i ≥ 1 with ε_i = 2^{-i} ≥ Δ̃_ℓ(a)/16,
     // independently add triple (ε_i, ⌈2^{2i+1} log T⌉, t) to S_t(a)
-    // with probability √ℓ / (K · T · log T).   [paper text, Section 2]
+    // with probability ε_i √ℓ / (K · T · log T).
     // -----------------------------------------------------------------------
     void schedule_bad_arm_checks() {
         if (T_ < 2) return;
 
-        // Line 11: probability = √ℓ / (K · T · log T)
-        const double prob = std::sqrt(static_cast<double>(ell_)) /
-                            (static_cast<double>(K_) *
-                             static_cast<double>(T_) * log_T_);
+        // Line 11: base probability factor √ℓ / (K · T · log T)
+        const double base_prob =
+            std::sqrt(static_cast<double>(ell_)) /
+            (static_cast<double>(K_) *
+             static_cast<double>(T_) * log_T_);
 
         // Line 10: For all a ∈ BAD_t …
         for (int a = 0; a < K_; ++a) {
             if (is_good_[a]) continue;
 
             // Line 10: … and all i ≥ 1 with 2^{-i} ≥ Δ̃_ℓ(a)/16.
-            for (int i = 1; i <= 60; ++i) {
+            for (int i = 1; i <= 60; ++i) { // i=60 → ε_i ≈ 8.67e-19, smaller than any reasonable Δ̃/16
                 const double eps_i =
                     std::pow(2.0, -static_cast<double>(i));
                 if (delta_tilde_[a] > 0.0 &&
                     eps_i < delta_tilde_[a] / 16.0) break;
 
-                // Line 11: add triple with probability prob (no ε_i factor).
-                if (std::bernoulli_distribution(std::min(1.0, prob))(rng_)) {
+                // Line 11: add triple with probability ε_i · base_prob.
+                const double prob_i = std::min(1.0, eps_i * base_prob);
+                if (std::bernoulli_distribution(prob_i)(rng_)) {
                     // n_needed = ⌈2 log T / ε_i²⌉ = ⌈2^{2i+1} · log T⌉
                     const double raw =
                         std::pow(2.0, 2 * i + 1) * log_T_;
